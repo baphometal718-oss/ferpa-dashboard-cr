@@ -1,0 +1,12 @@
+streamlit
+pandas
+numpy
+plotly
+streamlit-lottie
+requests
+streamlit-extras
+numpy-financial
+statsmodels
+scipy
+openpyxl
+pyarrow

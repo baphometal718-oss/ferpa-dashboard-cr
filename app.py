@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import requests
 from ferpa_logic import SimuladorFerpaV3
 
 # --- 1. CONFIGURACIÓN DE PÁGINA ---
@@ -40,7 +39,7 @@ def corporate_css():
     .metric-card {
         background: rgba(22, 27, 34, 0.6);
         backdrop-filter: blur(10px);
-        border: 1px solid rgba(0, 255, 170, 0.2); /* Borde sutil verde marca */
+        border: 1px solid rgba(0, 255, 170, 0.2);
         border-radius: 8px;
         padding: 24px 16px;
         text-align: center;
@@ -100,12 +99,18 @@ def corporate_css():
         border-bottom-color: #00FFAA !important;
     }
     
+    /* DATAFRAMES */
+    [data-testid="stDataFrame"] {
+        border: 1px solid #30363D;
+        border-radius: 5px;
+    }
+    
     </style>
     """, unsafe_allow_html=True)
 
 corporate_css()
 
-# --- ICONOS SVG (MODERNOS & LIMPIOS) ---
+# --- ICONOS SVG ---
 ICON_DOLLAR = """<svg class="metric-icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.31-8.86c-1.77-.45-2.34-.94-2.34-1.67 0-.84.79-1.43 2.1-1.43 1.38 0 1.9.66 1.94 1.64h1.71c-.05-1.34-.87-2.57-2.49-2.97V5H10.9v1.69c-1.51.32-2.72 1.3-2.72 2.81 0 1.79 1.49 2.69 3.66 3.21 1.95.46 2.34 1.15 2.34 1.87 0 .53-.39 1.39-2.1 1.39-1.6 0-2.23-.72-2.32-1.64H8.04c.1 1.7 1.36 2.66 2.86 2.97V19h2.34v-1.67c1.52-.29 2.72-1.16 2.73-2.77-.01-2.2-1.9-2.96-3.66-3.42z"/></svg>"""
 ICON_FACTORY = """<svg class="metric-icon" viewBox="0 0 24 24"><path d="M22 22H2V10l7-3v2l5-2v3h3l1-8h3l1 8v12zM12 9.95l-5 2V10l-3 1.32V20h16v-8h-8V9.95z"/></svg>"""
 ICON_LEAF = """<svg class="metric-icon" viewBox="0 0 24 24"><path d="M17 8C8 10 5.9 16.17 3.82 21.34l1.89.66.95-2.3c.48.17 1.01.29 1.57.33l1.61-3.18c.63.13 1.25.12 1.89-.04l2.16 2.93 1.66-2.93c1.76-.75 3.01-2.26 3.45-5.81zM7 21l-.95-2.28c.19-.55.45-1.1.77-1.65.31-.54.67-1.07 1.09-1.59l1.63 3.19c-.83.67-1.72 1.42-2.54 2.33zm11-13c-3.31 0-6 2.69-6 6 0 1.66.67 3.15 1.76 4.24l-3.33-5.86c.32-.46.7-.89 1.15-1.28l3.33 5.86c1.09-1.09 1.76-2.58 1.76-4.24 0-3.31-2.69-6-6-6z"/></svg>"""
@@ -115,78 +120,63 @@ ICON_CHART = """<svg class="metric-icon" viewBox="0 0 24 24"><path d="M19 3H5c-1
 with st.sidebar:
     # 1. LOGO CORPORATIVO
     try:
-        st.image("logo.png", width=220) # Centered automatically by Streamlit usually, width helps
+        st.image("logo.png", width=220)
     except:
-        st.title("FERPA") # Fallback
+        st.title("FERPA")
     
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("### ⚙️ PARAMETRIZACIÓN")
     
-    # CONTROLES AGRUPADOS
-    with st.expander("🏭 PRODUCCIÓN & CAPACIDAD", expanded=True):
-        toneladas_dia = st.slider("Input Diario (Ton)", 100, 500, 250, 10, format="%d t")
+    # CONTROLES MODULADOS
+    with st.expander("🏭 PRODUCCIÓN", expanded=True):
+        toneladas_dia = st.slider("Input Diario (Ton)", 100, 500, 200, 10, format="%d t")
 
-    with st.expander("🧱 ECONOMÍA DEL BLOQUE"):
-        precio_bloque = st.slider("Precio Venta ($)", 0.35, 1.00, 0.65, 0.05, format="$%.2f")
+    with st.expander("🧱 PRECIOS"):
+        precio_bloque = st.slider("Precio Venta Bloque ($)", 0.35, 1.20, 0.65, 0.05, format="$%.2f")
     
-    with st.expander("🏗️ GESTIÓN DE RESIDUOS"):
+    with st.expander("🏗️ GESTIÓN RESIDUOS"):
         precio_tipping = st.slider("Tipping Fee ($/Ton)", 7.0, 30.0, 15.0, 1.0, format="$%d")
         
     with st.expander("🌿 CRÉDITOS AMBIENTALES"):
-        precio_bono_co2 = st.slider("Bono CO2 ($/Ton)", 10.0, 30.0, 15.0, 1.0, format="$%d")
+        precio_bono_co2 = st.slider("Bono CO2 ($/Ton)", 5.0, 50.0, 15.0, 1.0, format="$%d")
         precio_bono_agua = st.slider("Crédito Agua ($/m3)", 5.0, 25.0, 10.0, 1.0, format="$%d")
 
+    # NUEVO: CONTROL DE IMPUESTOS
+    with st.expander("🏛️ FISCALIDAD", expanded=True):
+        tax_rate_percent = st.slider("Tasa Impuesto Renta (%)", 0, 30, 0, 1, format="%d%%")
+        tax_rate_decimal = tax_rate_percent / 100.0
+
     st.markdown("---")
-    st.markdown("##### 💵 VARIABLES MACRO")
-    col_mac1, col_mac2 = st.columns(2)
-    with col_mac1:
-        tasa_cambio = st.number_input("CRC/USD", 500.0, 600.0, 520.0)
-    with col_mac2:
-        meta_roi = st.number_input("Meta ROI (Años)", 1, 5, 2)
+    st.markdown("##### 💵 MACRO")
+    tasa_cambio = st.number_input("CRC/USD", 500.0, 600.0, 520.0)
 
-# --- SIMULATION ENGINE ---
-sim = SimuladorFerpaV3(toneladas_dia, precio_bloque, precio_tipping, precio_bono_co2, precio_bono_agua, tasa_cambio)
+# --- ENGINE ---
+sim = SimuladorFerpaV3(toneladas_dia, precio_bloque, precio_tipping, precio_bono_co2, precio_bono_agua, tasa_cambio, tax_rate_decimal)
 df, fisicos, kpis = sim.run_simulation()
-df_sens_tip, df_sens_ton = sim.get_sensitivity()
 
-# --- PLOTLY THEME CONFIG ---
+# --- PLOTLY THEME ---
 def apply_corporate_theme(fig):
     fig.update_layout(
         template="plotly_dark",
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(
-            family="Segoe UI, sans-serif",
-            size=14, # Legibilidad aumentada
-            color="#E0E0E0"
-        ),
-        title_font=dict(
-            size=20,
-            color="#00FFAA" # Neon Brand Title
-        ),
-        hoverlabel=dict(
-            bgcolor="#161B22",
-            font_size=14
-        ),
+        font=dict(family="Segoe UI, sans-serif", size=14, color="#E0E0E0"),
+        title_font=dict(size=20, color="#00FFAA"),
         margin=dict(l=40, r=40, t=60, b=40)
     )
-    # Update axes visibility
-    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='rgba(128,128,128,0.1)')
-    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='rgba(128,128,128,0.1)')
     return fig
 
 # --- MAIN CONTENT ---
 st.markdown("<h1 style='text-align: left; margin-bottom: 5px;'>SUITE FINANCIERA CORPORATIVA</h1>", unsafe_allow_html=True)
 st.markdown(f"<span class='neon-text' style='font-size: 1.2rem; display: block; margin-bottom: 30px;'>PROYECCIÓN FINANCIERA 2025-2035 | ESCENARIO {toneladas_dia} TPD</span>", unsafe_allow_html=True)
 
-# TABS
-tab_a, tab_b, tab_c, tab_d = st.tabs(["RESUMEN EJECUTIVO", "SUSTENTABILIDAD", "INGENIERÍA", "ANÁLISIS FINANCIERO"])
+# NEW TABS STRUCTURE
+tab_resumen, tab_sustentabilidad, tab_reporte = st.tabs(["RESUMEN EJECUTIVO", "SUSTENTABILIDAD", "📑 REPORTE FINANCIERO (TABLAS)"])
 
-# --- TAB A: EXECUTIVE ---
-with tab_a:
+# --- TAB A: RESUMEN EJECUTIVO ---
+with tab_resumen:
     # 1. KPI MATRIX
     k1, k2, k3, k4 = st.columns(4)
-    
     with k1:
         st.markdown(f"""
         <div class="metric-card">
@@ -216,13 +206,13 @@ with tab_a:
             <div class="metric-value">{fisicos['co2_total']:,.0f} T</div>
         </div>""", unsafe_allow_html=True)
 
-    # 2. CHARTS ROW 1
+    # 2. CHARTS - Waterfall & Payback
     st.markdown("<br>", unsafe_allow_html=True)
     r1_c1, r1_c2 = st.columns([2, 1])
     
     with r1_c1:
-        st.markdown("<h3 class='neon-text'>RECUPERACIÓN DE CAPITAL (ROI)</h3>", unsafe_allow_html=True)
-        # Waterfall
+        st.markdown("<h3 class='neon-text'>RECUPERACIÓN DE CAPITAL</h3>", unsafe_allow_html=True)
+        # Waterfall Logic Update
         x_wf = ["CAPEX"] + [str(y) for y in df["Año"]]
         y_wf = [-sim.capex] + df["Flujo_Caja"].tolist()
         fig_wf = go.Figure(go.Waterfall(
@@ -242,95 +232,162 @@ with tab_a:
             mode = "gauge+number",
             value = payback,
             number = {'suffix': " Años", 'font': {'size': 40, 'color': '#00FFAA'}},
-            gauge = {
-                'axis': {'range': [0, 10], 'tickcolor': "#A0AAB5"},
-                'bar': {'color': "#00FFAA"},
-                'bgcolor': "#161B22",
-                'bordercolor': "#30363D"
-            }
+            gauge = {'axis': {'range': [0, 10], 'tickcolor': "#A0AAB5"}, 'bar': {'color': "#00FFAA"}, 'bgcolor': "#161B22"}
         ))
         st.plotly_chart(apply_corporate_theme(fig_gauge), use_container_width=True)
 
-    # 3. CHARTS ROW 2
-    r2_c1, r2_c2 = st.columns(2)
-    with r2_c1:
-        st.markdown("### COMPOSICIÓN DE INGRESOS")
-        fig_stack = px.bar(df, x="Año", y=["Ingresos_Tipping", "Ingresos_Bloques", "Ingresos_Reciclables", "Ingresos_Ambientales"],
-                           color_discrete_sequence=["#2E86C1", "#00FFAA", "#F4D03F", "#27AE60"])
-        st.plotly_chart(apply_corporate_theme(fig_stack), use_container_width=True)
-    
-    with r2_c2:
-        st.markdown("### EBITDA vs UTILIDAD NETA")
-        fig_line = go.Figure()
-        fig_line.add_trace(go.Scatter(x=df["Año"], y=df["EBITDA"], name="EBITDA", 
-                                      line=dict(width=4, color='#00FFAA'), mode='lines+markers'))
-        fig_line.add_trace(go.Scatter(x=df["Año"], y=df["Utilidad_Neta"], name="Net Income", 
-                                      line=dict(dash='dot', width=2, color='#E0E0E0')))
-        st.plotly_chart(apply_corporate_theme(fig_line), use_container_width=True)
+    # 3. PRODUCTION DISTRIBUTION (DONUT) - UPDATED 0 MERMA
+    st.markdown("### DISTRIBUCIÓN DE INPUT FABRIL")
+    col_d1, col_d2 = st.columns([1, 2])
+    with col_d1:
+        # DONUT CHART: Reciclable vs Bloque ONLY
+        fig_donut = px.pie(
+            values=[fisicos['ton_reciclable'], fisicos['ton_bloque']], 
+            names=["Recuperación Reciclable", "Transformación a Bloque"],
+            color_discrete_sequence=["#F4D03F", "#00FFAA"], # Gold, Neon Green
+            hole=0.6
+        )
+        fig_donut.update_traces(textinfo='percent+label', textfont_size=14)
+        st.plotly_chart(apply_corporate_theme(fig_donut), use_container_width=True)
+    with col_d2:
+         st.info("ℹ️ **NUEVA LÓGICA DE PRODUCCIÓN:** El 100% de la entrada se valoriza. 13% se recupera como reciclable de alto valor y el 87% restante se transforma integralmente en Bloques de Construcción, eliminando el concepto de merma por vertedero.")
 
-# --- TAB B: ENVIRONMENTAL ---
-with tab_b:
+# --- TAB B: SUSTENTABILIDAD ---
+with tab_sustentabilidad:
     b1, b2 = st.columns(2)
     with b1:
-        st.markdown("<h3 class='neon-text'>IMPACTO DE CARBONO ACUMULADO</h3>", unsafe_allow_html=True)
+        st.markdown("<h3 class='neon-text'>HUELLA DE CARBONO EVITADA</h3>", unsafe_allow_html=True)
         co2_acum = [fisicos['co2_total'] * i for i in range(1, 11)]
-        fig_area = px.area(x=df["Año"], y=co2_acum)
+        fig_area = px.area(x=df["Año"], y=co2_acum, labels={'y': 'Ton CO2 Acumuladas'})
         fig_area.update_traces(line_color='#00FFAA', fillcolor='rgba(0, 255, 170, 0.2)')
         st.plotly_chart(apply_corporate_theme(fig_area), use_container_width=True)
         
     with b2:
         st.markdown("<h3 class='neon-text'>EQUIVALENCIA ECOLÓGICA</h3>", unsafe_allow_html=True)
-        # Visual Metric Card for Trees
         st.markdown(f"""
         <div class="metric-card" style="margin-top: 20px;">
             {ICON_LEAF}
             <div class="metric-label">BOSQUE EQUIVALENTE</div>
             <div class="metric-value neon">{fisicos['arboles']:,.0f}</div>
-            <div class="metric-label">ÁRBOLES PLANTADOS / AÑO</div>
+            <div class="metric-label">ÁRBOLES ADULTOS CONSERVADOS / AÑO</div>
         </div>""", unsafe_allow_html=True)
 
-# --- TAB C: ENGINEERING ---
-with tab_c:
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("### BALANCE DE MASA (INPUT vs OUTPUT)")
-        fig_io = go.Figure(data=[
-            go.Bar(name='Input RSU', x=['Masa Total'], y=[fisicos['ton_input']], marker_color='#E0E0E0'),
-            go.Bar(name='Output Bloques', x=['Masa Total'], y=[fisicos['ton_bloque']], marker_color='#00FFAA')
-        ])
-        st.plotly_chart(apply_corporate_theme(fig_io), use_container_width=True)
-        
-    with c2:
-        st.markdown("### DETALLE DE TRANSFORMACIÓN")
-        fig_mass = px.pie(values=[fisicos['ton_reciclable'], fisicos['ton_bloque'], fisicos['ton_input']*0.25], 
-                          names=["Reciclables", "Bloques", "Merma"], 
-                          color_discrete_sequence=["#F4D03F", "#00FFAA", "#EF5350"], hole=0.6)
-        st.plotly_chart(apply_corporate_theme(fig_mass), use_container_width=True)
+# --- TAB C: REPORTING (10 TABLES) ---
+with tab_reporte:
+    st.markdown("### 📑 REPORTE FINANCIERO DETALLADO")
+    st.markdown("Consolidado de tablas maestras para auditoría y revisión contable.")
+    
+    # helper for formatting
+    def format_df(dataframe, format_dict=None):
+        if format_dict:
+            return dataframe.style.format(format_dict)
+        return dataframe
 
-    st.markdown("### HOJA DE PRODUCCIÓN ANUAL")
-    df_fisicos = pd.DataFrame([fisicos]).T.rename(columns={0: "Valor Anual"})
-    st.markdown(df_fisicos.to_html(classes='table table-dark'), unsafe_allow_html=True)
+    # TABLE 1: PRODUCCIÓN FÍSICA
+    with st.expander("TABLA 1: PRODUCCIÓN FÍSICA", expanded=True):
+        # Create year range
+        years = df["Año"].tolist()
+        t1_data = {
+            "Año": years,
+            "Ton Entrada": [fisicos['ton_input']] * 10,
+            "Ton Reciclaje": [fisicos['ton_reciclable']] * 10,
+            "Ton Transformación": [fisicos['ton_bloque']] * 10,
+            "Cantidad Bloques": [fisicos['num_bloques']] * 10
+        }
+        df_t1 = pd.DataFrame(t1_data)
+        st.dataframe(df_t1.style.format({"Ton Entrada": "{:,.0f}", "Ton Reciclaje": "{:,.0f}", "Ton Transformación": "{:,.0f}", "Cantidad Bloques": "{:,.0f}"}), use_container_width=True)
 
-# --- TAB D: FINANCE ---
-with tab_d:
-    d1, d2 = st.columns([3, 1])
-    with d1:
-        st.markdown("<h3 class='neon-text'>SUPERFICIE DE RENTABILIDAD (SENSIBILIDAD)</h3>", unsafe_allow_html=True)
-        x_3d, y_3d, z_3d = sim.get_3d_matrix()
-        fig_3d = go.Figure(data=[go.Surface(z=z_3d, x=x_3d, y=y_3d, colorscale='Viridis')])
-        fig_3d.update_layout(scene = dict(
-            xaxis_title='Tipping Fee', yaxis_title='Precio Bloque', zaxis_title='Utilidad'),
-            margin=dict(l=0, r=0, b=0, t=0), height=600)
-        st.plotly_chart(apply_corporate_theme(fig_3d), use_container_width=True)
+    # TABLE 2: PRECIOS UNITARIOS
+    with st.expander("TABLA 2: PRECIOS UNITARIOS PROYECTADOS"):
+        t2_cols = ["Año", "Precio_Bloque_Proy", "Precio_Tipping_Proy", "Precio_BonoCO2_Proy", "Precio_BonoAgua_Proy"]
+        df_t2 = df[t2_cols].copy()
+        df_t2.columns = ["Año", "Precio Bloque ($)", "Tipping Fee ($/Ton)", "Bono CO2 ($/Ton)", "Bono Agua ($/m3)"]
+        st.dataframe(df_t2.style.format("${:,.2f}"), use_container_width=True)
+
+    # TABLE 3: INGRESOS POR LÍNEA
+    with st.expander("TABLA 3: INGRESOS POR LÍNEA DE NEGOCIO"):
+        t3_cols = ["Año", "Ingresos_Tipping", "Ingresos_Bloques", "Ingresos_Reciclables", "Ingresos_Ambientales", "Ingresos_Totales"]
+        df_t3 = df[t3_cols].copy()
+        st.dataframe(df_t3.style.format("${:,.0f}"), use_container_width=True)
+
+    # TABLE 4: ESTRUCTURA OPEX
+    with st.expander("TABLA 4: ESTRUCTURA OPEX (Costos Operativos)"):
+        # OPEX is 45% of Block Sales logic
+        t4_data = {
+            "Año": df["Año"],
+            "Ingresos Bloques": df["Ingresos_Bloques"],
+            "Factor OPEX": ["45%"] * 10,
+            "OPEX Total": df["OPEX"]
+        }
+        df_t4 = pd.DataFrame(t4_data)
+        st.dataframe(df_t4.style.format({"Ingresos Bloques": "${:,.0f}", "OPEX Total": "${:,.0f}"}), use_container_width=True)
+
+    # TABLE 5: ESTADO DE RESULTADOS (P&L)
+    with st.expander("TABLA 5: ESTADO DE RESULTADOS (P&L)", expanded=True):
+        t5_cols = ["Año", "Ingresos_Totales", "OPEX", "EBITDA", "Depreciacion", "Impuestos", "Utilidad_Neta"]
+        df_t5 = df[t5_cols].copy()
+        st.dataframe(df_t5.style.format("${:,.0f}"), use_container_width=True)
+
+    # TABLE 6: FLUJO DE CAJA
+    with st.expander("TABLA 6: FLUJO DE CAJA LIBRE"):
+        # FC = Net Income + Dep - CAPEX (if any in that year)
+        # Year 0 not shown in these annual tables usually, but implicit.
+        t6_cols = ["Año", "Utilidad_Neta", "Depreciacion", "Flujo_Caja"]
+        df_t6 = df[t6_cols].copy()
+        st.dataframe(df_t6.style.format("${:,.0f}"), use_container_width=True)
+
+    # TABLE 7: RETORNO DE INVERSIÓN
+    with st.expander("TABLA 7: RETORNO DE INVERSIÓN ACUMULADO"):
+        t7_cols = ["Año", "Flujo_Caja", "Flujo_Acumulado"]
+        df_t7 = df[t7_cols].copy()
+        st.dataframe(df_t7.style.format("${:,.0f}"), use_container_width=True)
+
+    # TABLE 8: IMPACTO AMBIENTAL DETALLADO
+    with st.expander("TABLA 8: IMPACTO AMBIENTAL"):
+        years = df["Año"]
+        t8_data = {
+            "Año": years,
+            "CO2 Evitado (Ton)": [fisicos['co2_total']] * 10,
+            "Lixiviados Evitados (m3)": [fisicos['lixiviados_total']] * 10,
+            "Árboles Equivalentes": [fisicos['arboles']] * 10
+        }
+        df_t8 = pd.DataFrame(t8_data)
+        st.dataframe(df_t8.style.format("{:,.0f}"), use_container_width=True)
+
+    # TABLE 9: AHORRO AL MERCADO
+    with st.expander("TABLA 9: COMPARATIVA DE MERCADO (AHORRO)"):
+        # Assumption: Market Block Price is 25% higher than Ferpa Price for competitive edge
+        market_price_base = precio_bloque * 1.25
         
-    with d2:
-        st.markdown("### KPI DE EFICIENCIA")
-        st.markdown(f"""
-        <div class="metric-card">
-            {ICON_FACTORY}
-            <div class="metric-label">MARGEN EBITDA</div>
-            <div class="metric-value neon">{(df['EBITDA'].sum() / df['Ingresos_Totales'].sum())*100:.1f}%</div>
-        </div>""", unsafe_allow_html=True)
-        
-    st.markdown("### ESTADO DE RESULTADOS DETALLADO")
-    st.markdown(df.style.format("${:,.0f}").to_html(), unsafe_allow_html=True)
+        t9_data = []
+        for i, year in enumerate(years):
+            inf = (1 + 0.03) ** i
+            p_ferpa = precio_bloque * inf
+            p_market = market_price_base * inf
+            num = fisicos['num_bloques']
+            ahorro = (p_market - p_ferpa) * num
+            t9_data.append({
+                "Año": year,
+                "Precio FERPA": p_ferpa,
+                "Precio Mercado Est.": p_market,
+                "Ahorro Cliente Total": ahorro
+            })
+        df_t9 = pd.DataFrame(t9_data)
+        st.dataframe(df_t9.style.format({"Precio FERPA": "${:,.2f}", "Precio Mercado Est.": "${:,.2f}", "Ahorro Cliente Total": "${:,.0f}"}), use_container_width=True)
+
+    # TABLE 10: RESUMEN EJECUTIVO (KPIs)
+    with st.expander("TABLA 10: RESUMEN EJECUTIVO KPI"):
+        t10_data = pd.DataFrame({
+            "Año": df["Año"],
+            "EBITDA": df["EBITDA"],
+            "Margen EBITDA": (df["EBITDA"] / df["Ingresos_Totales"]) * 100,
+            "Utilidad Neta": df["Utilidad_Neta"],
+            "ROI Acumulado": df["Flujo_Acumulado"]
+        })
+        st.dataframe(t10_data.style.format({
+            "EBITDA": "${:,.0f}", 
+            "Margen EBITDA": "{:.1f}%", 
+            "Utilidad Neta": "${:,.0f}",
+            "ROI Acumulado": "${:,.0f}"
+        }), use_container_width=True)
+

@@ -2,10 +2,10 @@ import pandas as pd
 import numpy_financial as npf
 import numpy as np
 
-# Default Parameters for V3
+# Default Parameters for V3 + Re-Engineering
 PARAMS_V3 = {
     "INFLACION_ANUAL": 0.03,
-    "CRECIMIENTO_PRODUCCION": 0.0, # Flat growth for now
+    "CRECIMIENTO_PRODUCCION": 0.0,
     "DIAS_OPERATIVOS_ANUAL": 312,
 }
 
@@ -17,24 +17,23 @@ LOGICA_AMBIENTAL = {
 }
 
 class SimuladorFerpaV3:
-    def __init__(self, t_dia, p_bloque, p_tipping, p_bono_co2, p_bono_agua, tasa_cambio):
+    def __init__(self, t_dia, p_bloque, p_tipping, p_bono_co2, p_bono_agua, tasa_cambio, tax_rate=0.0):
         self.t_dia = t_dia # Toneladas Diarias
         self.p_bloque = p_bloque
         self.p_tipping = p_tipping
         self.p_bono_co2 = p_bono_co2
         self.p_bono_agua = p_bono_agua
         self.tasa_cambio = tasa_cambio
+        self.tax_rate = tax_rate if tax_rate is not None else 0.0
         
         # Fixed Assumptions
         self.capex = 10000000 # $10M
-        self.opex_ratio = 0.45 # "Regla del 45%" from user prompt Tab D hint
-        self.tax_rate = 0.30
         self.tasa_descuento = 0.12
         
-        # Mass Balance
-        self.pct_reciclable = 0.15
-        self.pct_bloque = 0.60
-        self.pct_merma = 0.25 # Remaining
+        # Mass Balance (Zero Merma Logic)
+        self.pct_reciclable = 0.13
+        self.pct_bloque = 0.87
+        self.pct_merma = 0.00 
         self.peso_bloque = 1.7 # Lightweight
         
         self.params = PARAMS_V3
@@ -46,7 +45,7 @@ class SimuladorFerpaV3:
         
         ton_reciclable = ton_anual_input * self.pct_reciclable
         ton_bloque_masa = ton_anual_input * self.pct_bloque
-        ton_merma = ton_anual_input * self.pct_merma
+        # ton_merma = 0
         
         num_bloques = (ton_bloque_masa * 1000) / self.peso_bloque
         
@@ -57,6 +56,7 @@ class SimuladorFerpaV3:
         
         # 3. Financial Loop
         flujos = []
+        depreciacion_anual = self.capex / years # Linear depreciation for simple cash flow
         
         for i in range(1, years + 1):
             year = 2025 + i
@@ -73,13 +73,21 @@ class SimuladorFerpaV3:
             
             total_rev = rev_tipping + rev_bloques + rev_reciclables + rev_bonos_co2 + rev_bonos_agua
             
-            # Costs
-            opex = total_rev * self.opex_ratio
+            # Costs - STRICT RULE: OPEX = 45% of BLOCK SALES
+            opex = rev_bloques * 0.45
+            
             ebitda = total_rev - opex
             
-            # Taxes
-            taxes = ebitda * self.tax_rate
-            net_income = ebitda - taxes
+            # Net Income
+            # For tax purposes: usually EBITDA - Depreciation - Interest (ignored here) = EBT
+            ebt = ebitda - depreciacion_anual 
+            taxes = max(0, ebt * self.tax_rate) # Taxes only on positive income
+            net_income = ebt - taxes
+            
+            # Free Cash Flow = Net Income + Depreciation - CAPEX (Year 0 only, handled outside usually or as net)
+            # Standard Project Finance Cash Flow: EBITDA - Taxes - CAPEX (if rolling) - working capital...
+            # Simplified here: Net Income + Depreciation (add back non-cash)
+            flujo_caja = net_income + depreciacion_anual
             
             flujos.append({
                 "Año": year,
@@ -92,17 +100,29 @@ class SimuladorFerpaV3:
                 "Ingresos_Ambientales": rev_bonos_co2 + rev_bonos_agua,
                 "OPEX": opex,
                 "EBITDA": ebitda,
+                "Depreciacion": depreciacion_anual,
                 "Impuestos": taxes,
                 "Utilidad_Neta": net_income,
-                "Flujo_Caja": net_income # Simplified
+                "Flujo_Caja": flujo_caja,
+                
+                # Precios Unitarios (For Report Table 2)
+                "Precio_Bloque_Proy": self.p_bloque * inf,
+                "Precio_Tipping_Proy": self.p_tipping * inf,
+                "Precio_BonoCO2_Proy": self.p_bono_co2 * inf,
+                "Precio_BonoAgua_Proy": self.p_bono_agua * inf
             })
             
         df = pd.DataFrame(flujos)
         
         # Metrics
-        df["Flujo_Acumulado"] = df["Flujo_Caja"].cumsum() - self.capex
-        
+        # Year 0 Cashflow is -CAPEX
         cf_array = [-self.capex] + df["Flujo_Caja"].tolist()
+        
+        df["Flujo_Acumulado"] = np.cumsum(cf_array)[1:] # Exclude year 0 from the accumulating column to align with years 1-10 rows
+        # Actually, let's make Flujo Acumulado start from -Capex logic? 
+        # Better: Flujo Acumulado Year 1 = -Capex + Flow Year 1
+        df["Flujo_Acumulado"] = np.cumsum([-self.capex] + df["Flujo_Caja"].tolist())[1:]
+
         van = npf.npv(self.tasa_descuento, cf_array)
         tir = npf.irr(cf_array)
         
@@ -120,33 +140,26 @@ class SimuladorFerpaV3:
         return df, metrics_fisicos, {"VAN": van, "TIR": tir}
 
     def get_sensitivity(self):
-        # Quick sensitivity analysis for graph 14 and 20
+        # Quick sensitivity analysis
         # Varying Tipping Fee
         sens_tipping = []
         for p in range(5, 50, 5):
-            # manual calc for speed
-            rev = (self.t_dia*312) * p + (self.t_dia*312*0.6*1000/1.7)*self.p_bloque # simplified
-            # This is too simple, better to run simulation? 
-            # Let's just run lightweight sims
-            sim = SimuladorFerpaV3(self.t_dia, self.p_bloque, p, self.p_bono_co2, self.p_bono_agua, self.tasa_cambio)
-            df, _, _ = sim.run_simulation(1) # 1 year
+            sim = SimuladorFerpaV3(self.t_dia, self.p_bloque, p, self.p_bono_co2, self.p_bono_agua, self.tasa_cambio, self.tax_rate)
+            df, _, _ = sim.run_simulation(1) # 1 year snapshot
             sens_tipping.append({"Tipping_Fee": p, "EBITDA": df.iloc[0]["EBITDA"]})
             
         # Varying Toneladas
         sens_ton = []
         for t in range(100, 600, 50):
-            sim = SimuladorFerpaV3(t, self.p_bloque, self.p_tipping, self.p_bono_co2, self.p_bono_agua, self.tasa_cambio)
+            sim = SimuladorFerpaV3(t, self.p_bloque, self.p_tipping, self.p_bono_co2, self.p_bono_agua, self.tasa_cambio, self.tax_rate)
             df, _, _ = sim.run_simulation(1)
             sens_ton.append({"Toneladas": t, "Ventas_Totales": df.iloc[0]["Ingresos_Totales"]})
             
         return pd.DataFrame(sens_tipping), pd.DataFrame(sens_ton)
 
     def get_3d_matrix(self):
-        # Generate meshgrid data for 3D Surface Plot
-        # X = Tipping Fee ($5 to $40)
-        # Y = Block Price ($0.30 to $1.20)
-        # Z = Utilidad Neta (Year 1)
-        
+        # Kept for backward compatibility if needed, though user asked to remove 3D tab
+        # We can still calculate it if we want to show it elsewhere or debug
         x_vals = np.linspace(5, 40, 15) # Tipping Fee
         y_vals = np.linspace(0.3, 1.2, 15) # Block Price
         z_matrix = []
@@ -154,14 +167,7 @@ class SimuladorFerpaV3:
         for y in y_vals:
             z_row = []
             for x in x_vals:
-                # Quick calc for speed
-                # Rev = (Input) + (Bloques) + (Recic) + (Amb)
-                # Input = T_dia * 312 * x
-                # Bloques = Blocks * y
-                # Amb & Recic = Fixed in this sensitivity
-                
-                # Full sim instance for accuracy
-                sim = SimuladorFerpaV3(self.t_dia, y, x, self.p_bono_co2, self.p_bono_agua, self.tasa_cambio)
+                sim = SimuladorFerpaV3(self.t_dia, y, x, self.p_bono_co2, self.p_bono_agua, self.tasa_cambio, self.tax_rate)
                 df, _, _ = sim.run_simulation(1)
                 z_row.append(df.iloc[0]["Utilidad_Neta"])
             z_matrix.append(z_row)

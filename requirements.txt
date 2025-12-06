@@ -7,3 +7,6 @@ requests
 streamlit-extras
 numpy-financial
 statsmodels
+scipy
+openpyxl
+pyarrow
